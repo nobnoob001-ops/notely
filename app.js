@@ -13,7 +13,7 @@
   ];
 
   const STORAGE_KEY = 'notely.notes.v1';
-  const COPIABLE = 'p, h1, h2, h3, li, blockquote, pre, td, th, a';
+  const COPIABLE = 'p, h1, h2, h3, li, blockquote, pre, a';
   const MAX_COLS = 12;
   const MAX_TABLE_ROWS = 30;
 
@@ -57,6 +57,7 @@
   let lineCopyBtn = null;
   let hideTimer = null;
   let colorPop = null;
+  let lastCellEl = null;
 
   function loadNotes() {
     try {
@@ -369,9 +370,15 @@
     els.content.addEventListener('mouseover', (e) => {
       if (!els.content.contains(e.target)) return;
       const el = e.target.closest(COPIABLE);
-      if (el && el !== hoverEl) {
-        hoverEl = el;
-        showLineCopyBtn(el);
+      if (el) {
+        if (el !== hoverEl) {
+          hoverEl = el;
+          showLineCopyBtn(el);
+        }
+      } else if (hoverEl && hoverEl.contains(e.target)) {
+        return;
+      } else {
+        hideLineCopyBtn();
       }
     });
 
@@ -398,7 +405,6 @@
     const rect = el.getBoundingClientRect();
     let label = 'Copy';
     if (el.tagName === 'A') label = 'Copy link';
-    else if (el.tagName === 'TD' || el.tagName === 'TH') label = 'Copy cell';
     lineCopyBtn.textContent = label;
     lineCopyBtn.style.bottom = 'auto';
     lineCopyBtn.style.left = Math.min(rect.right + 10, window.innerWidth - 90) + 'px';
@@ -408,10 +414,13 @@
 
   function scheduleHideLineBtn() {
     clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => {
-      lineCopyBtn.classList.add('hidden');
-      hoverEl = null;
-    }, 150);
+    hideTimer = setTimeout(hideLineCopyBtn, 150);
+  }
+
+  function hideLineCopyBtn() {
+    clearTimeout(hideTimer);
+    lineCopyBtn.classList.add('hidden');
+    hoverEl = null;
   }
 
   /* ---------- Colour picker ---------- */
@@ -459,6 +468,7 @@
     return `<div class="table-controls">` +
       `<button type="button" data-table-op="add-col" title="Add column">+ Col</button>` +
       `<button type="button" data-table-op="add-row" title="Add row">+ Row</button>` +
+      `<button type="button" data-table-op="copy-cell" title="Copy the selected cell">Copy cell</button>` +
       `<button type="button" data-table-op="del-col" title="Remove last column">− Col</button>` +
       `<button type="button" data-table-op="del-row" title="Remove last row">− Row</button>` +
       `<button type="button" data-table-op="remove" title="Delete table">✕</button>` +
@@ -538,6 +548,10 @@
       const trs = $$('tr', tbody);
       if (trs.length <= 1) return;
       trs[trs.length - 1].remove();
+    } else if (op === 'copy-cell') {
+      const cell = wrap.querySelector('td:focus, th:focus') || lastCellEl || wrap.querySelector('tbody td, thead th');
+      if (cell) copyText(cell.textContent.trim());
+      return;
     } else if (op === 'remove') {
       wrap.remove();
     }
@@ -699,7 +713,15 @@
       if (op) {
         e.preventDefault();
         tableOp(op.dataset.tableOp, op);
+        return;
       }
+      const cell = e.target.closest('td, th');
+      if (cell && cell.closest('.table-wrap')) lastCellEl = cell;
+    });
+
+    els.content.addEventListener('focusin', (e) => {
+      const cell = e.target.closest && e.target.closest('td, th');
+      if (cell && cell.closest('.table-wrap')) lastCellEl = cell;
     });
 
     els.content.addEventListener('paste', (e) => {
