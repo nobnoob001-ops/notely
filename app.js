@@ -48,7 +48,17 @@
     focusBtn: $('#focus-btn'),
     exportBtn: $('#export-btn'),
     wordCount: $('#word-count'),
-    emptyNewBtn: $('#empty-new-btn')
+    emptyNewBtn: $('#empty-new-btn'),
+    attachBtn: $('#attach-btn'),
+    fileInput: $('#file-input'),
+    ocrBtn: $('#ocr-btn'),
+    ocrLang: $('#ocr-lang'),
+    fontSelect: $('#font-select'),
+    attachments: $('#attachments'),
+    attachmentList: $('#attachment-list'),
+    ocrProgress: $('#ocr-progress'),
+    ocrBarFill: $('#ocr-bar-fill'),
+    ocrStatus: $('#ocr-status')
   };
 
   let notes = loadNotes();
@@ -80,6 +90,267 @@
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
     } catch (e) {}
+  }
+
+  /* ---------- Attachment storage (IndexedDB) ---------- */
+
+  const ATTACH_DB = 'notely.files.v1';
+  let idbPromise = null;
+
+  function openDB() {
+    if (idbPromise) return idbPromise;
+    idbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(ATTACH_DB, 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains('files')) {
+          req.result.createObjectStore('files');
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return idbPromise;
+  }
+
+  async function idbPut(id, blob) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('files', 'readwrite');
+      tx.objectStore('files').put(blob, id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function idbGet(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('files', 'readonly');
+      const req = tx.objectStore('files').get(id);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function idbDelete(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('files', 'readwrite');
+      tx.objectStore('files').delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  function fmtSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function attachmentIcon(att) {
+    if (att.type && att.type.startsWith('image/')) return '🖼';
+    if (att.type === 'application/pdf' || String(att.name).toLowerCase().endsWith('.pdf')) return '📄';
+    return '📎';
+  }
+
+  function renderAttachments(n) {
+    const list = (n && n.attachments) || [];
+    els.attachments.classList.toggle('hidden', !list.length);
+    els.attachmentList.innerHTML = list.map((a) =>
+      `<div class="attach-chip" data-id="${esc(a.id)}">` +
+      `<span class="attach-ico">${attachmentIcon(a)}</span>` +
+      `<span class="attach-meta">` +
+      `<span class="attach-name" title="${esc(a.name)}">${esc(a.name)}</span>` +
+      `<span class="attach-size">${fmtSize(a.size || 0)}</span>` +
+      `</span>` +
+      `<span class="attach-acts">` +
+      `<button type="button" data-act="dl" title="Download">⬇</button>` +
+      (a.type && a.type.startsWith('image/') ? `<button type="button" data-act="ocr" title="Extract text (OCR)">🔎</button>` : '') +
+      `<button type="button" data-act="rm" title="Remove">✕</button>` +
+      `</span></div>`
+    ).join('');
+    list.forEach((a) => {
+      const chip = els.attachmentList.querySelector(`[data-id="${a.id}"] .attach-ico`);
+      if (chip && a.type && a.type.startsWith('image/')) {
+        idbGet(a.id).then((blob) => {
+          if (!blob || !chip.isConnected) return;
+          chip.textContent = '';
+          chip.style.background = 'url(' + URL.createObjectURL(blob) + ') center/cover no-repeat';
+        }).catch(() => {});
+      }
+    });
+  }
+
+  async function attachFiles(fileList) {
+    const n = getNote(activeId);
+    if (!n || !fileList || !fileList.length) return;
+    if (!n.attachments) n.attachments = [];
+    for (const f of fileList) {
+      const id = uid();
+      const blob = new Blob([f], { type: f.type || 'application/octet-stream' });
+      await idbPut(id, blob);
+      n.attachments.push({ id, name: f.name, type: f.type, size: f.size });
+    }
+    saveNotes();
+    renderAttachments(n);
+    showToast(fileList.length === 1 ? 'Attached ✓' : fileList.length + ' files attached ✓');
+  }
+
+  async function downloadAttachment(id) {
+    const blob = await idbGet(id);
+    const n = getNote(activeId);
+    const att = n && n.attachments && n.attachments.find((a) => a.id === id);
+    if (!blob || !att) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = att.name || 'attachment';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function removeAttachment(id) {
+    const n = getNote(activeId);
+    if (!n) return;
+    n.attachments = (n.attachments || []).filter((a) => a.id !== id);
+    await idbDelete(id);
+    saveNotes();
+    renderAttachments(n);
+    renderList();
+  }
+
+  function deleteNoteAttachments(n) {
+    (n.attachments || []).forEach((a) => idbDelete(a.id).catch(() => {}));
+  }
+
+  /* ---------- Offline OCR ---------- */
+
+  const OCR_PATHS = {
+    workerPath: 'vendor/ocr/worker.min.js',
+    corePath: 'vendor/ocr/',
+    langPath: 'vendor/ocr/lang/',
+    gzip: true
+  };
+  let tesseractPromise = null;
+
+  function loadTesseract() {
+    if (window.Tesseract) return Promise.resolve();
+    if (tesseractPromise) return tesseractPromise;
+    tesseractPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'vendor/ocr/tesseract.min.js';
+      s.onload = () => resolve();
+      s.onerror = () => { tesseractPromise = null; reject(new Error('Failed to load OCR engine')); };
+      document.head.appendChild(s);
+    });
+    return tesseractPromise;
+  }
+
+  function ocrSetStatus(text, pct) {
+    els.ocrBarFill.style.width = (pct == null ? 0 : pct) + '%';
+    els.ocrStatus.textContent = text || '';
+  }
+
+  async function runOCR(attId) {
+    const n = getNote(activeId);
+    if (!n) return;
+    const imgs = (n.attachments || []).filter((a) => a.type && a.type.startsWith('image/'));
+    const att = imgs.find((a) => a.id === attId) || imgs[0];
+    if (!att) {
+      showToast('Attach an image first');
+      return;
+    }
+    const blob = await idbGet(att.id);
+    if (!blob) {
+      showToast('Image not found');
+      return;
+    }
+    const lang = els.ocrLang.value || 'eng';
+    els.ocrProgress.classList.remove('hidden');
+    ocrSetStatus('Loading OCR…', 5);
+    try {
+      const imageURL = URL.createObjectURL(blob);
+      const canvas = await blobToCanvas(blob, imageURL);
+      await loadTesseract();
+      ocrSetStatus('Preparing engine…', 10);
+      const worker = await Tesseract.createWorker(lang, 1, {
+        ...OCR_PATHS,
+        logger: (m) => {
+          if (m.status === 'recognizing text') {
+            ocrSetStatus('Recognizing…', 10 + m.progress * 85);
+          }
+        }
+      });
+      const { data: { text } } = await worker.recognize(canvas);
+      await worker.terminate();
+      ocrSetStatus('Inserting…', 100);
+      insertOCRText(text);
+      showToast('OCR complete ✓');
+    } catch (e) {
+      showToast('OCR failed');
+    } finally {
+      setTimeout(() => els.ocrProgress.classList.add('hidden'), 400);
+    }
+  }
+
+  function blobToCanvas(blob, url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const cv = document.createElement('canvas');
+          cv.width = img.naturalWidth || img.width;
+          cv.height = img.naturalHeight || img.height;
+          const ctx = cv.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          URL.revokeObjectURL(url);
+          resolve(cv);
+        } catch (e) {
+          URL.revokeObjectURL(url);
+          reject(e);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Image decode failed'));
+      };
+      img.src = url;
+    });
+  }
+
+  function insertOCRText(text) {
+    const clean = String(text || '').trim();
+    if (!clean) {
+      showToast('No text detected');
+      return;
+    }
+    const lines = clean.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const html = lines.map((l) => `<p>${esc(l)}</p>`).join('');
+    els.content.focus();
+    document.execCommand('insertHTML', false, html);
+    recomputeTotals();
+    updateStats();
+    scheduleSave();
+  }
+
+  /* ---------- Font picker ---------- */
+
+  const FONT_CLASSES = {
+    default: '',
+    inter: 'font-inter',
+    serif: 'font-serif',
+    hind: 'font-hind',
+    notosansbn: 'font-notosansbn',
+    notoserifbn: 'font-notoserifbn'
+  };
+
+  function applyFont(n) {
+    const cls = FONT_CLASSES[n.font] || '';
+    Object.values(FONT_CLASSES).forEach((c) => { if (c) els.content.classList.remove(c); });
+    if (cls) els.content.classList.add(cls);
   }
 
   function uid() {
@@ -119,6 +390,8 @@
       color: nextColor(),
       content: '',
       tags: [],
+      attachments: [],
+      font: 'default',
       pinned: false,
       createdAt: now,
       updatedAt: now
@@ -144,7 +417,10 @@
     els.content.innerHTML = n.content;
     els.pin.classList.toggle('on', n.pinned);
     applyColor(n);
+    applyFont(n);
+    els.fontSelect.value = n.font || 'default';
     renderTagChips(n);
+    renderAttachments(n);
     els.editor.classList.remove('hidden');
     els.empty.classList.add('hidden');
     els.content.scrollTop = 0;
@@ -157,6 +433,8 @@
     activeId = null;
     els.editor.classList.add('hidden');
     els.empty.classList.remove('hidden');
+    els.attachments.classList.add('hidden');
+    els.ocrProgress.classList.add('hidden');
     renderList();
     renderTags();
     updateCount();
@@ -920,7 +1198,10 @@
       scheduleSave();
     });
 
-    els.toolbar.addEventListener('mousedown', (e) => e.preventDefault());
+    els.toolbar.addEventListener('mousedown', (e) => {
+      if (e.target.closest('select')) return;
+      e.preventDefault();
+    });
     els.toolbar.addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
@@ -928,6 +1209,7 @@
         insertTable();
         return;
       }
+      if (b.id === 'attach-btn' || b.id === 'ocr-btn') return;
       document.execCommand(b.dataset.cmd, false, b.dataset.value || null);
       els.content.focus();
     });
@@ -945,6 +1227,7 @@
       const n = getNote(activeId);
       if (!n) return;
       if (!window.confirm('Delete this note?')) return;
+      deleteNoteAttachments(n);
       notes = notes.filter((x) => x.id !== activeId);
       activeId = null;
       saveNotes();
@@ -991,6 +1274,35 @@
     });
 
     els.exportBtn.addEventListener('click', exportNoteAsMd);
+
+    els.attachBtn.addEventListener('click', () => els.fileInput.click());
+    els.fileInput.addEventListener('change', () => {
+      const files = [...els.fileInput.files];
+      els.fileInput.value = '';
+      attachFiles(files);
+    });
+
+    els.ocrBtn.addEventListener('click', () => runOCR(null));
+
+    els.fontSelect.addEventListener('change', () => {
+      const n = getNote(activeId);
+      if (!n) return;
+      n.font = els.fontSelect.value;
+      applyFont(n);
+      saveNotes();
+      renderList();
+    });
+
+    els.attachmentList.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const chip = btn.closest('.attach-chip');
+      const id = chip && chip.dataset.id;
+      if (!id) return;
+      if (btn.dataset.act === 'dl') downloadAttachment(id);
+      else if (btn.dataset.act === 'rm') removeAttachment(id);
+      else if (btn.dataset.act === 'ocr') runOCR(id);
+    });
 
     els.emptyNewBtn.addEventListener('click', newNote);
 

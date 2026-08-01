@@ -1,5 +1,22 @@
-const CACHE = 'notely-v4';
-const ASSETS = ['./', './index.html', './styles.css?v=4', './app.js?v=4', './manifest.json', './icon-192.png', './icon-512.png'];
+const CACHE = 'notely-v5';
+const ASSETS = [
+  './', './index.html', './styles.css?v=5', './app.js?v=5', './manifest.json', './icon-192.png', './icon-512.png',
+  './vendor/ocr/tesseract.min.js',
+  './vendor/ocr/worker.min.js',
+  './vendor/ocr/tesseract-core-simd.wasm.js',
+  './vendor/ocr/tesseract-core.wasm.js',
+  './vendor/ocr/tesseract-core-lstm.wasm.js',
+  './vendor/ocr/tesseract-core-simd-lstm.wasm.js',
+  './vendor/ocr/lang/eng.traineddata.gz',
+  './vendor/ocr/lang/ben.traineddata.gz',
+  './fonts/inter-var.woff2',
+  './fonts/source-serif-var.woff2',
+  './fonts/hind-siliguri-400.woff2',
+  './fonts/hind-siliguri-600.woff2',
+  './fonts/noto-sans-bengali-400.woff2',
+  './fonts/noto-sans-bengali-700.woff2',
+  './fonts/noto-serif-bengali-var.woff2'
+];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
