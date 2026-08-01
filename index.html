@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notely — Notes that stay organized</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-dot"></span>Notely</div>
+    <button id="new-note-btn" class="new-note-btn" type="button">+ New Note</button>
+    <div class="search-wrap">
+      <input id="search-input" type="text" placeholder="Search notes, tags…" autocomplete="off">
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" type="button" data-filter="all">All notes</button>
+      <button class="nav-item" type="button" data-filter="pinned">Pinned</button>
+    </nav>
+    <div class="tags-panel">
+      <div class="tags-title">Tags</div>
+      <div id="tag-list"></div>
+    </div>
+    <div class="sidebar-foot">New notes get their own soft colour</div>
+  </aside>
+
+  <section class="notes-pane">
+    <div class="notes-header">
+      <span id="notes-count"></span>
+      <label class="sort-label">Sort
+        <select id="sort-select">
+          <option value="updated">Last edited</option>
+          <option value="created">Date created</option>
+          <option value="title">Title A–Z</option>
+        </select>
+      </label>
+    </div>
+    <div id="notes-list" class="notes-list"></div>
+  </section>
+
+  <main class="editor-pane" id="editor-pane">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🗒</div>
+      <h2>Select or create a note</h2>
+      <p>Click <strong>+ New Note</strong> to start. Each note gets its own soft colour.</p>
+    </div>
+
+    <div class="editor hidden" id="editor">
+      <div class="editor-top">
+        <input id="note-title" class="note-title" type="text" placeholder="Untitled note" autocomplete="off">
+        <div class="editor-actions">
+          <button id="pin-btn" type="button" title="Pin note">Pin</button>
+          <button id="color-btn" type="button" title="Change colour">Colour</button>
+          <button id="delete-btn" type="button" title="Delete note">Delete</button>
+        </div>
+      </div>
+      <div class="toolbar" id="toolbar">
+        <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
+        <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
+        <button type="button" data-cmd="underline" title="Underline"><u>U</u></button>
+        <span class="sep"></span>
+        <button type="button" data-cmd="formatBlock" data-value="H2" title="Heading">H</button>
+        <button type="button" data-cmd="formatBlock" data-value="P" title="Paragraph">¶</button>
+        <span class="sep"></span>
+        <button type="button" data-cmd="insertUnorderedList" title="Bullet list">• List</button>
+        <button type="button" data-cmd="insertOrderedList" title="Numbered list">1. List</button>
+        <span class="sep"></span>
+        <button type="button" data-cmd="formatBlock" data-value="PRE" title="Code block">&lt;/&gt;</button>
+        <button id="insert-table-btn" type="button" title="Insert a table">⊞ Table</button>
+      </div>
+      <div id="note-colorbar" class="note-colorbar"></div>
+      <div class="content-scroll">
+        <div id="note-content" class="note-content" contenteditable="true" spellcheck="false" data-placeholder="Start writing…"></div>
+      </div>
+      <div class="editor-bottom">
+        <input id="tag-input" type="text" placeholder="Add a tag, press Enter…" autocomplete="off">
+        <div id="tag-chips" class="tag-chips"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<button id="float-copy" class="float-copy hidden" type="button">Copy selection</button>
+<script src="app.js"></script>
+</body>
+</html>
