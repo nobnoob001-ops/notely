@@ -39,7 +39,11 @@
     tagChips: $('#tag-chips'),
     tagList: $('#tag-list'),
     navItems: $$('.nav-item'),
-    floatCopy: $('#float-copy')
+    floatCopy: $('#float-copy'),
+    menu: $('#menu-btn'),
+    back: $('#back-btn'),
+    fab: $('#fab'),
+    overlay: $('#sidebar-overlay')
   };
 
   let notes = loadNotes();
@@ -118,6 +122,7 @@
     saveNotes();
     renderAll();
     openNote(n.id);
+    if (isMobile()) location.hash = '#/note/' + n.id;
     els.title.focus();
   }
 
@@ -135,6 +140,7 @@
     els.empty.classList.add('hidden');
     els.content.scrollTop = 0;
     renderList();
+    updateView();
   }
 
   function showEmpty() {
@@ -144,6 +150,23 @@
     renderList();
     renderTags();
     updateCount();
+    updateView();
+  }
+
+  function isMobile() {
+    return window.matchMedia('(max-width: 900px)').matches;
+  }
+
+  function updateView() {
+    const mobile = isMobile();
+    const inNote = !!activeId && !!getNote(activeId);
+    document.body.classList.toggle('view-note', mobile && inNote);
+    document.body.classList.toggle('view-list', mobile && !inNote);
+  }
+
+  function closeNav() {
+    document.body.classList.remove('nav-open');
+    els.overlay.classList.remove('show');
   }
 
   function applyColor(n) {
@@ -523,7 +546,10 @@
 
     els.list.addEventListener('click', (e) => {
       const card = e.target.closest('.note-card');
-      if (card) openNote(card.dataset.id);
+      if (card) {
+        if (isMobile()) location.hash = '#/note/' + card.dataset.id;
+        else openNote(card.dataset.id);
+      }
     });
 
     els.search.addEventListener('input', () => {
@@ -542,6 +568,7 @@
         refreshNav();
         renderTags();
         renderList();
+        if (isMobile()) closeNav();
       });
     });
 
@@ -553,6 +580,7 @@
       refreshNav();
       renderTags();
       renderList();
+      if (isMobile()) closeNav();
     });
 
     els.title.addEventListener('input', scheduleSave);
@@ -591,8 +619,29 @@
       activeId = null;
       saveNotes();
       renderAll();
-      if (notes.length) openNote(notes[0].id);
-      else showEmpty();
+      if (isMobile()) {
+        location.hash = '#/';
+      } else if (notes.length) {
+        openNote(notes[0].id);
+      } else {
+        showEmpty();
+      }
+    });
+
+    els.back.addEventListener('click', () => {
+      location.hash = '#/';
+    });
+
+    els.menu.addEventListener('click', () => {
+      document.body.classList.add('nav-open');
+      els.overlay.classList.add('show');
+    });
+
+    els.overlay.addEventListener('click', closeNav);
+
+    els.fab.addEventListener('click', () => {
+      closeNav();
+      newNote();
     });
 
     els.tagInput.addEventListener('keydown', (e) => {
@@ -700,7 +749,20 @@
     initLineCopy();
     initColorPop();
     renderAll();
-    if (notes.length) openNote(notes[0].id);
+    const m = location.hash.match(/^#\/note\/(.+)$/);
+    if (m && getNote(m[1])) openNote(m[1]);
+    else if (!isMobile() && notes.length) openNote(notes[0].id);
+    updateView();
+    window.addEventListener('resize', updateView);
+    window.addEventListener('hashchange', () => {
+      const hm = location.hash.match(/^#\/note\/(.+)$/);
+      if (hm && getNote(hm[1])) openNote(hm[1]);
+      else {
+        flushSave();
+        activeId = null;
+        showEmpty();
+      }
+    });
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
     }

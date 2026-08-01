@@ -13,7 +13,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="view-list">
 <div id="app">
   <aside class="sidebar">
     <div class="brand"><span class="brand-dot"></span>Notely</div>
@@ -33,6 +33,10 @@
   </aside>
 
   <section class="notes-pane">
+    <div class="mobile-top">
+      <button id="menu-btn" class="icon-btn" type="button" title="Menu">☰</button>
+      <span class="mobile-brand">Notely</span>
+    </div>
     <div class="notes-header">
       <span id="notes-count"></span>
       <label class="sort-label">Sort
@@ -55,6 +59,7 @@
 
     <div class="editor hidden" id="editor">
       <div class="editor-top">
+        <button id="back-btn" class="icon-btn back-btn" type="button" title="Back">←</button>
         <input id="note-title" class="note-title" type="text" placeholder="Untitled note" autocomplete="off">
         <div class="editor-actions">
           <button id="pin-btn" type="button" title="Pin note">Pin</button>
@@ -88,6 +93,8 @@
   </main>
 </div>
 
+<div id="sidebar-overlay" class="sidebar-overlay"></div>
+<button id="fab" class="fab" type="button" title="New note">+</button>
 <button id="float-copy" class="float-copy hidden" type="button">Copy selection</button>
 <script src="app.js"></script>
 </body>
