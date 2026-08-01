@@ -53,9 +53,15 @@
 
   <main class="editor-pane" id="editor-pane">
     <div class="empty-state" id="empty-state">
-      <div class="empty-icon">🗒</div>
-      <h2>Select or create a note</h2>
-      <p>Click <strong>+ New Note</strong> to start. Each note gets its own soft colour.</p>
+      <div class="empty-logo"><span class="brand-dot"></span></div>
+      <h2>Welcome to Notely</h2>
+      <p>Colourful notes, one-tap copy, smart tables, and focus mode — all saved on your device.</p>
+      <button id="empty-new-btn" class="new-note-btn" type="button">+ Create your first note</button>
+      <div class="empty-features">
+        <span>🎨 Soft colours</span>
+        <span>⊞ Smart tables</span>
+        <span>✂️ Easy copy</span>
+      </div>
     </div>
 
     <div class="editor hidden" id="editor">
@@ -63,10 +69,12 @@
         <button id="back-btn" class="icon-btn back-btn" type="button" title="Back">←</button>
         <input id="note-title" class="note-title" type="text" placeholder="Untitled note" autocomplete="off">
         <div class="editor-actions">
-          <button id="pin-btn" type="button" title="Pin note">Pin</button>
-          <button id="color-btn" type="button" title="Change colour">Colour</button>
-          <button id="delete-btn" type="button" title="Delete note">Delete</button>
+          <button id="pin-btn" type="button" title="Pin">Pin</button>
+          <button id="color-btn" type="button" title="Colour">🎨</button>
+          <button id="focus-btn" type="button" title="Focus mode">⛶</button>
+          <button id="delete-btn" type="button" title="Delete">🗑</button>
         </div>
+      </div>
       </div>
       <div class="toolbar" id="toolbar">
         <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
@@ -87,8 +95,14 @@
         <div id="note-content" class="note-content" contenteditable="true" spellcheck="false" data-placeholder="Start writing…"></div>
       </div>
       <div class="editor-bottom">
-        <input id="tag-input" type="text" placeholder="Add a tag, press Enter…" autocomplete="off">
-        <div id="tag-chips" class="tag-chips"></div>
+        <div class="bottom-left">
+          <input id="tag-input" type="text" placeholder="Add a tag, press Enter…" autocomplete="off">
+          <div id="tag-chips" class="tag-chips"></div>
+        </div>
+        <div class="bottom-right">
+          <span id="word-count" class="word-count"></span>
+          <button id="export-btn" type="button" title="Export as Markdown">⬇</button>
+        </div>
       </div>
     </div>
   </main>
@@ -96,7 +110,7 @@
 
 <div id="sidebar-overlay" class="sidebar-overlay"></div>
 <button id="fab" class="fab" type="button" title="New note">+</button>
-<button id="float-copy" class="float-copy hidden" type="button">Copy selection</button>
+<div id="sel-bar" class="sel-bar hidden"></div>
 <script src="app.js"></script>
 </body>
 </html>

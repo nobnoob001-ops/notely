@@ -525,6 +525,200 @@ body {
 
 .toast.show { opacity: 1; transform: translate(-50%, -4px); }
 
+/* ---------- Selection bar ---------- */
+.sel-bar {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  gap: 2px;
+  background: #23303b;
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.22);
+}
+
+.sel-bar.hidden { display: none; }
+
+.sel-bar button {
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sel-bar button:hover { background: rgba(255, 255, 255, 0.15); }
+
+.sel-bar .sep {
+  width: 1px;
+  background: rgba(255, 255, 255, 0.25);
+  margin: 2px 3px;
+}
+
+/* ---------- Totals popover ---------- */
+.totals-pop {
+  position: fixed;
+  z-index: 130;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.14);
+  padding: 10px 12px;
+  min-width: 180px;
+}
+
+.totals-pop.hidden { display: none; }
+
+.tp-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  margin: 8px 0 4px;
+}
+
+.tp-label:first-child { margin-top: 0; }
+
+.tp-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.tp-chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.tp-chip:hover { background: #f1f3f5; }
+
+.tp-chip.on { background: var(--note-acc, var(--accent)); color: #fff; border-color: transparent; }
+
+.tp-remove {
+  display: block;
+  margin-top: 10px;
+  border: none;
+  background: transparent;
+  color: #c0392b;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.totals-row td { font-weight: 600; background: #f6f7f9; }
+
+.totals-row .total-val { color: #2f6f4f; }
+
+/* ---------- Welcome screen ---------- */
+.empty-state {
+  margin: auto;
+  text-align: center;
+  color: var(--muted);
+  max-width: 360px;
+  padding: 24px;
+}
+
+.empty-logo {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #6e95b8, #9887c4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-logo .brand-dot { width: 26px; height: 26px; background: #fff; }
+
+.empty-state h2 { font-size: 20px; color: var(--text); margin-bottom: 8px; }
+
+.empty-state p { font-size: 13px; line-height: 1.6; margin-bottom: 18px; }
+
+.empty-state .new-note-btn { width: auto; display: inline-block; padding: 11px 18px; }
+
+.empty-features {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.empty-features span {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* ---------- List empty ---------- */
+.list-empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 48px 16px;
+}
+
+.list-empty-icon { font-size: 40px; margin-bottom: 10px; }
+
+.list-empty p { font-weight: 600; color: var(--text); margin-bottom: 4px; }
+
+.list-empty small { color: var(--muted); }
+
+/* ---------- Word count & export ---------- */
+.word-count { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+.export-btn {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.export-btn:hover { background: #f1f3f5; }
+
+/* ---------- Focus mode ---------- */
+body.focus-mode .sidebar,
+body.focus-mode .notes-pane { display: none; }
+
+body.focus-mode #app { grid-template-columns: 1fr; }
+
+body.focus-mode .toolbar,
+body.focus-mode .editor-bottom,
+body.focus-mode .note-colorbar,
+body.focus-mode .editor-actions { display: none; }
+
+body.focus-mode .editor { background: var(--bg); }
+
+body.focus-mode .content-scroll { padding: 32px; max-width: 720px; margin: 0 auto; }
+
+body.focus-mode .note-content {
+  min-height: calc(100vh - 160px);
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+body.focus-mode .back-btn { display: inline-flex; }
+
+@media (max-width: 900px) {
+  body.focus-mode .mobile-top { display: none; }
+}
+
 /* ---------- Mobile navigation ---------- */
 .mobile-top {
   display: none;

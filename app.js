@@ -39,12 +39,16 @@
     tagChips: $('#tag-chips'),
     tagList: $('#tag-list'),
     navItems: $$('.nav-item'),
-    floatCopy: $('#float-copy'),
-    menu: $('#menu-btn'),
-    back: $('#back-btn'),
-    fab: $('#fab'),
     overlay: $('#sidebar-overlay'),
-    searchToggle: $('#search-toggle-btn')
+    searchToggle: $('#search-toggle-btn'),
+    back: $('#back-btn'),
+    menu: $('#menu-btn'),
+    fab: $('#fab'),
+    selBar: $('#sel-bar'),
+    focusBtn: $('#focus-btn'),
+    exportBtn: $('#export-btn'),
+    wordCount: $('#word-count'),
+    emptyNewBtn: $('#empty-new-btn')
   };
 
   let notes = loadNotes();
@@ -58,6 +62,9 @@
   let hideTimer = null;
   let colorPop = null;
   let lastCellEl = null;
+  let totalsPop = null;
+  let totalsWrap = null;
+  let totalsCol = 0;
 
   function loadNotes() {
     try {
@@ -143,6 +150,7 @@
     els.content.scrollTop = 0;
     renderList();
     updateView();
+    updateStats();
   }
 
   function showEmpty() {
@@ -153,6 +161,7 @@
     renderTags();
     updateCount();
     updateView();
+    updateStats();
   }
 
   function isMobile() {
@@ -200,6 +209,7 @@
     saveNotes();
     renderList();
     renderTags();
+    updateStats();
   }
 
   function visibleNotes() {
@@ -226,7 +236,7 @@
     const list = visibleNotes();
     els.list.innerHTML = list.length
       ? list.map(cardHTML).join('')
-      : '<div class="list-empty">No notes here yet.</div>';
+      : '<div class="list-empty"><div class="list-empty-icon">🗒</div><p>No notes yet</p><small>Tap + to create your first note</small></div>';
     updateCount();
   }
 
@@ -251,6 +261,12 @@
     if (els.search.value.trim()) label = 'Search results';
     const n = visibleNotes().length;
     els.listTitle.textContent = label + (n ? ` (${n})` : '');
+  }
+
+  function updateStats() {
+    const text = els.content.innerText.trim();
+    const words = text ? text.split(/\s+/).length : 0;
+    els.wordCount.textContent = words + ' words · ' + text.length + ' chars';
   }
 
   function renderTags() {
@@ -327,15 +343,16 @@
 
   /* ---------- Selection copy ---------- */
 
-  function positionFloatCopy(rect) {
-    const btn = els.floatCopy;
-    btn.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 150)) + 'px';
-    btn.style.bottom = (window.innerHeight - rect.bottom + 10) + 'px';
-    btn.style.top = 'auto';
+  function positionSelBar(rect) {
+    const bar = els.selBar;
+    bar.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 220)) + 'px';
+    bar.style.bottom = (window.innerHeight - rect.bottom + 10) + 'px';
+    bar.style.top = 'auto';
+    bar.classList.remove('hidden');
   }
 
-  function hideFloatCopy() {
-    els.floatCopy.classList.add('hidden');
+  function hideSelBar() {
+    els.selBar.classList.add('hidden');
   }
 
   function flashSelection() {
@@ -423,6 +440,292 @@
     hoverEl = null;
   }
 
+  /* ---------- Selection bar ---------- */
+
+  function initSelBar() {
+    const defs = [
+      { act: 'copy', label: 'Copy', title: 'Copy text', run: () => copySelection('text') },
+      { act: 'md', label: 'MD', title: 'Copy as Markdown', run: () => copySelection('md') },
+      { sep: true },
+      { act: 'bold', label: 'B', title: 'Bold', run: () => execSel('bold') },
+      { act: 'italic', label: 'I', title: 'Italic', run: () => execSel('italic') },
+      { act: 'hl', label: 'H', title: 'Highlight', run: highlightSel }
+    ];
+    defs.forEach((d) => {
+      if (d.sep) {
+        const s = document.createElement('span');
+        s.className = 'sep';
+        els.selBar.appendChild(s);
+        return;
+      }
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = d.label;
+      b.title = d.title || d.label;
+      b.dataset.act = d.act;
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('click', d.run);
+      els.selBar.appendChild(b);
+    });
+  }
+
+  function getSel() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) return null;
+    if (!(sel.anchorNode && els.content.contains(sel.anchorNode))) return null;
+    if (!sel.toString().trim()) return null;
+    return sel;
+  }
+
+  function copySelection(kind) {
+    const sel = getSel();
+    if (!sel) return;
+    const text = kind === 'md' ? htmlToMd(sel.getRangeAt(0).cloneContents()) : sel.toString();
+    copyText(text);
+    if (kind === 'text') flashSelection();
+    hideSelBar();
+  }
+
+  function execSel(cmd, val) {
+    const sel = getSel();
+    if (!sel) return;
+    document.execCommand(cmd, false, val || null);
+    scheduleSave();
+    hideSelBar();
+  }
+
+  function highlightSel() {
+    execSel('hiliteColor', '#ffe08a');
+  }
+
+  function positionSelBar(rect) {
+    const bar = els.selBar;
+    bar.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 220)) + 'px';
+    bar.style.bottom = (window.innerHeight - rect.bottom + 10) + 'px';
+    bar.style.top = 'auto';
+    bar.classList.remove('hidden');
+  }
+
+  function hideSelBar() {
+    els.selBar.classList.add('hidden');
+  }
+
+  /* ---------- Totals popover ---------- */
+
+  function initTotalsPop() {
+    totalsPop = document.createElement('div');
+    totalsPop.className = 'totals-pop hidden';
+    document.body.appendChild(totalsPop);
+    document.addEventListener('mousedown', (e) => {
+      if (totalsPop.classList.contains('hidden')) return;
+      if (!totalsPop.contains(e.target)) totalsPop.classList.add('hidden');
+    });
+  }
+
+  function openTotalsPop(wrap, btnRect) {
+    totalsWrap = wrap;
+    const headers = [...wrap.querySelectorAll('thead th')].map((th, i) => String(th.textContent).trim() || 'Column ' + (i + 1));
+    const funcs = [
+      ['sum', 'Sum'],
+      ['avg', 'Average'],
+      ['min', 'Min'],
+      ['max', 'Max'],
+      ['count', 'Count']
+    ];
+    let html = '<div class="tp-label">Column</div><div class="tp-chips" id="tp-cols">';
+    html += headers.map((h, i) => `<button type="button" class="tp-chip${i === totalsCol ? ' on' : ''}" data-i="${i}">${esc(h)}</button>`).join('');
+    html += '</div><div class="tp-label">Calculate</div><div class="tp-chips" id="tp-funcs">';
+    html += funcs.map((f) => `<button type="button" class="tp-chip" data-f="${f[0]}">${f[1]}</button>`).join('');
+    html += '</div><button type="button" class="tp-remove" id="tp-remove">Remove total</button>';
+    totalsPop.innerHTML = html;
+
+    const chips = [...totalsPop.querySelectorAll('#tp-cols .tp-chip')];
+    chips.forEach((c) => {
+      c.addEventListener('click', () => {
+        totalsCol = +c.dataset.i;
+        chips.forEach((x) => x.classList.toggle('on', x === c));
+      });
+    });
+    if (chips.length) chips[0].classList.add('on');
+
+    totalsPop.querySelector('#tp-funcs').addEventListener('click', (e) => {
+      const b = e.target.closest('.tp-chip');
+      if (!b) return;
+      applyTotal(b.dataset.f);
+      totalsPop.classList.add('hidden');
+    });
+
+    totalsPop.querySelector('#tp-remove').addEventListener('click', () => {
+      removeTotal();
+      totalsPop.classList.add('hidden');
+    });
+
+    const r = btnRect;
+    totalsPop.style.top = (r.bottom + 8) + 'px';
+    totalsPop.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+    totalsPop.style.left = 'auto';
+    totalsPop.classList.remove('hidden');
+  }
+
+  function applyTotal(func) {
+    if (!totalsWrap) return;
+    const tbody = totalsWrap.querySelector('tbody');
+    const old = tbody.querySelector('tr.totals-row');
+    if (old) old.remove();
+    const colCount = Math.max(1, totalsWrap.querySelectorAll('thead th').length);
+    const cells = [];
+    for (let i = 0; i < colCount; i++) cells.push('<td></td>');
+    cells[totalsCol] = '<td class="total-val"></td>';
+    const tr = document.createElement('tr');
+    tr.className = 'totals-row';
+    tr.dataset.col = totalsCol;
+    tr.dataset.func = func;
+    tr.innerHTML = cells.join('');
+    tbody.appendChild(tr);
+    computeWrapTotals(totalsWrap);
+    scheduleSave();
+  }
+
+  function removeTotal() {
+    if (!totalsWrap) return;
+    const tr = totalsWrap.querySelector('tr.totals-row');
+    if (tr) tr.remove();
+    scheduleSave();
+  }
+
+  function computeWrapTotals(wrap) {
+    const tbody = wrap.querySelector('tbody');
+    const tr = tbody && tbody.querySelector('tr.totals-row');
+    if (!tr) return;
+    const col = +tr.dataset.col;
+    const func = tr.dataset.func;
+    const rows = [...tbody.querySelectorAll('tr:not(.totals-row)')];
+    const nums = rows
+      .map((r) => {
+        const c = r.children[col];
+        return c ? parseFloat(String(c.textContent).replace(/[^0-9.\-]/g, '')) : NaN;
+      })
+      .filter((n) => !isNaN(n));
+    let val;
+    if (func === 'sum') val = nums.reduce((a, b) => a + b, 0);
+    else if (func === 'avg') val = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+    else if (func === 'min') val = nums.length ? Math.min(...nums) : 0;
+    else if (func === 'max') val = nums.length ? Math.max(...nums) : 0;
+    else val = nums.length;
+    const label = { sum: 'Σ Sum', avg: 'Avg', min: 'Min', max: 'Max', count: 'Count' }[func] || func;
+    const labelCol = col === 0 ? 1 : 0;
+    if (tr.children[labelCol]) tr.children[labelCol].textContent = label;
+    const vCell = tr.children[col];
+    if (vCell) vCell.textContent = fmtVal(val);
+  }
+
+  function fmtVal(n) {
+    return Number.isInteger(n) ? String(n) : (+n.toFixed(2)).toString();
+  }
+
+  function recomputeTotals() {
+    $$('.table-wrap', els.content).forEach(computeWrapTotals);
+  }
+
+  /* ---------- Markdown conversion ---------- */
+
+  function htmlToMd(node) {
+    let md = '';
+    const walk = (n) => {
+      if (n.nodeType === 3) {
+        md += n.textContent;
+        return;
+      }
+      const tag = n.nodeName.toLowerCase();
+      if (tag === 'br') {
+        md += '\n';
+        return;
+      }
+      const inner = () => [...n.childNodes].forEach(walk);
+      const txt = () => [...n.childNodes].map((c) => c.textContent || '').join('');
+      switch (tag) {
+        case 'p':
+        case 'div':
+          inner();
+          md += '\n\n';
+          break;
+        case 'h1':
+        case 'h2':
+        case 'h3':
+          md += '\n' + '#'.repeat(+tag[1]) + ' ' + txt() + '\n\n';
+          break;
+        case 'b':
+        case 'strong':
+          md += '**' + txt() + '**';
+          break;
+        case 'i':
+        case 'em':
+          md += '*' + txt() + '*';
+          break;
+        case 'u':
+          inner();
+          break;
+        case 'a':
+          md += '[' + txt() + '](' + (n.getAttribute('href') || '') + ')';
+          break;
+        case 'li':
+          md += '- ' + txt() + '\n';
+          break;
+        case 'ul':
+        case 'ol':
+          inner();
+          md += '\n';
+          break;
+        case 'pre':
+          md += '\n```\n' + txt() + '\n```\n';
+          break;
+        case 'blockquote':
+          md += '\n> ' + txt() + ' \n';
+          break;
+        case 'table':
+          md += tableToMd(n);
+          break;
+        default:
+          inner();
+      }
+    };
+    walk(node);
+    return md;
+  }
+
+  function tableToMd(table) {
+    const rows = [...table.querySelectorAll('tr')].map((tr) =>
+      [...tr.querySelectorAll('th, td')].map((c) => String(c.textContent).trim().replace(/\|/g, '\\|'))
+    );
+    if (!rows.length) return '';
+    const header = rows[0];
+    let md = '\n| ' + header.join(' | ') + ' |\n| ' + header.map(() => '---').join(' | ') + ' |\n';
+    rows.slice(1).forEach((r) => {
+      md += '| ' + r.join(' | ') + ' |\n';
+    });
+    return md + '\n';
+  }
+
+  /* ---------- Export ---------- */
+
+  function exportNoteAsMd() {
+    const n = getNote(activeId);
+    if (!n) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = n.content;
+    const md = '# ' + (n.title || 'Untitled') + '\n\n' + htmlToMd(wrap);
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (n.title || 'note') + '.md';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast('Exported ✓');
+  }
+
   /* ---------- Colour picker ---------- */
 
   function initColorPop() {
@@ -469,6 +772,7 @@
       `<button type="button" data-table-op="add-col" title="Add column">+ Col</button>` +
       `<button type="button" data-table-op="add-row" title="Add row">+ Row</button>` +
       `<button type="button" data-table-op="copy-cell" title="Copy the selected cell">Copy cell</button>` +
+      `<button type="button" data-table-op="totals" title="Calculate totals">Σ Total</button>` +
       `<button type="button" data-table-op="del-col" title="Remove last column">− Col</button>` +
       `<button type="button" data-table-op="del-row" title="Remove last row">− Row</button>` +
       `<button type="button" data-table-op="remove" title="Delete table">✕</button>` +
@@ -552,6 +856,9 @@
       const cell = wrap.querySelector('td:focus, th:focus') || lastCellEl || wrap.querySelector('tbody td, thead th');
       if (cell) copyText(cell.textContent.trim());
       return;
+    } else if (op === 'totals') {
+      openTotalsPop(wrap, btn.getBoundingClientRect());
+      return;
     } else if (op === 'remove') {
       wrap.remove();
     }
@@ -607,7 +914,11 @@
       if (e.key === 'Enter') els.content.focus();
     });
 
-    els.content.addEventListener('input', scheduleSave);
+    els.content.addEventListener('input', () => {
+      recomputeTotals();
+      updateStats();
+      scheduleSave();
+    });
 
     els.toolbar.addEventListener('mousedown', (e) => e.preventDefault());
     els.toolbar.addEventListener('click', (e) => {
@@ -668,6 +979,20 @@
       closeNav();
       newNote();
     });
+
+    els.focusBtn.addEventListener('click', () => {
+      document.body.classList.toggle('focus-mode');
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.body.classList.contains('focus-mode')) {
+        document.body.classList.remove('focus-mode');
+      }
+    });
+
+    els.exportBtn.addEventListener('click', exportNoteAsMd);
+
+    els.emptyNewBtn.addEventListener('click', newNote);
 
     els.tagInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -739,36 +1064,26 @@
     document.addEventListener('mouseup', () => {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) {
-        hideFloatCopy();
+        hideSelBar();
         return;
       }
       if (!(sel.anchorNode && els.content.contains(sel.anchorNode))) {
-        hideFloatCopy();
+        hideSelBar();
         return;
       }
       const rect = sel.getRangeAt(0).getBoundingClientRect();
       if (!rect.width && !rect.height) {
-        hideFloatCopy();
+        hideSelBar();
         return;
       }
-      positionFloatCopy(rect);
-      els.floatCopy.classList.remove('hidden');
+      positionSelBar(rect);
     });
 
     document.addEventListener('mousedown', (e) => {
-      if (!els.floatCopy.contains(e.target)) hideFloatCopy();
+      if (!els.selBar.contains(e.target)) hideSelBar();
     });
 
-    els.floatCopy.addEventListener('mousedown', (e) => e.preventDefault());
-
-    els.floatCopy.addEventListener('click', () => {
-      const sel = window.getSelection();
-      if (sel && !sel.isCollapsed && sel.anchorNode && els.content.contains(sel.anchorNode)) {
-        copyText(sel.toString());
-        flashSelection();
-        hideFloatCopy();
-      }
-    });
+    els.selBar.addEventListener('mousedown', (e) => e.preventDefault());
   }
 
   function renderAll() {
@@ -781,11 +1096,14 @@
     bindEvents();
     initLineCopy();
     initColorPop();
+    initSelBar();
+    initTotalsPop();
     renderAll();
     const m = location.hash.match(/^#\/note\/(.+)$/);
     if (m && getNote(m[1])) openNote(m[1]);
     else if (!isMobile() && notes.length) openNote(notes[0].id);
     updateView();
+    updateStats();
     window.addEventListener('resize', updateView);
     window.addEventListener('hashchange', () => {
       const hm = location.hash.match(/^#\/note\/(.+)$/);
