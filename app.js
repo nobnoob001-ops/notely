@@ -24,7 +24,7 @@
     newBtn: $('#new-note-btn'),
     search: $('#search-input'),
     list: $('#notes-list'),
-    count: $('#notes-count'),
+    listTitle: $('#notes-title'),
     sort: $('#sort-select'),
     editor: $('#editor'),
     empty: $('#empty-state'),
@@ -43,7 +43,8 @@
     menu: $('#menu-btn'),
     back: $('#back-btn'),
     fab: $('#fab'),
-    overlay: $('#sidebar-overlay')
+    overlay: $('#sidebar-overlay'),
+    searchToggle: $('#search-toggle-btn')
   };
 
   let notes = loadNotes();
@@ -243,8 +244,12 @@
   }
 
   function updateCount() {
+    let label = 'All notes';
+    if (filter === 'pinned') label = 'Pinned';
+    if (activeTag) label = '#' + activeTag;
+    if (els.search.value.trim()) label = 'Search results';
     const n = visibleNotes().length;
-    els.count.textContent = n === 1 ? '1 note' : n + ' notes';
+    els.listTitle.textContent = label + (n ? ` (${n})` : '');
   }
 
   function renderTags() {
@@ -637,6 +642,12 @@
       els.overlay.classList.add('show');
     });
 
+    els.searchToggle.addEventListener('click', () => {
+      document.body.classList.add('nav-open');
+      els.overlay.classList.add('show');
+      setTimeout(() => els.search.focus(), 220);
+    });
+
     els.overlay.addEventListener('click', closeNav);
 
     els.fab.addEventListener('click', () => {
@@ -765,6 +776,12 @@
     });
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        location.reload();
+      });
     }
   }
 

@@ -1,4 +1,4 @@
-const CACHE = 'notely-v1';
+const CACHE = 'notely-v2';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -21,12 +21,16 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
     caches.match(e.request).then((hit) => {
-      if (hit) return hit;
-      return fetch(e.request).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, copy));
-        return res;
-      });
+      const update = fetch(e.request)
+        .then((res) => {
+          if (res && res.status === 200 && e.request.url.startsWith(self.location.origin)) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(e.request, copy));
+          }
+          return res;
+        })
+        .catch(() => null);
+      return hit || update;
     })
   );
 });
