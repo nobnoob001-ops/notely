@@ -51,6 +51,7 @@
     emptyNewBtn: $('#empty-new-btn'),
     attachBtn: $('#attach-btn'),
     fileInput: $('#file-input'),
+    recBtn: $('#rec-btn'),
     ocrBtn: $('#ocr-btn'),
     ocrLang: $('#ocr-lang'),
     fontSelect: $('#font-select'),
@@ -58,7 +59,14 @@
     attachmentList: $('#attachment-list'),
     ocrProgress: $('#ocr-progress'),
     ocrBarFill: $('#ocr-bar-fill'),
-    ocrStatus: $('#ocr-status')
+    ocrStatus: $('#ocr-status'),
+    recBar: $('#rec-bar'),
+    recTime: $('#rec-time'),
+    recStop: $('#rec-stop'),
+    recCancel: $('#rec-cancel'),
+    viewer: $('#viewer'),
+    viewerBody: $('#viewer-body'),
+    viewerClose: $('#viewer-close')
   };
 
   let notes = loadNotes();
@@ -75,6 +83,12 @@
   let totalsPop = null;
   let totalsWrap = null;
   let totalsCol = 0;
+  let savedRange = null;
+  let mediaRecorder = null;
+  let recChunks = [];
+  let recStream = null;
+  let recStartTs = 0;
+  let recTimer = null;
 
   function loadNotes() {
     try {
@@ -150,6 +164,7 @@
 
   function attachmentIcon(att) {
     if (att.type && att.type.startsWith('image/')) return '🖼';
+    if (att.type && att.type.startsWith('audio/')) return '🎵';
     if (att.type === 'application/pdf' || String(att.name).toLowerCase().endsWith('.pdf')) return '📄';
     return '📎';
   }
@@ -191,6 +206,7 @@
       const blob = new Blob([f], { type: f.type || 'application/octet-stream' });
       await idbPut(id, blob);
       n.attachments.push({ id, name: f.name, type: f.type, size: f.size });
+      insertInlineMediaAtCursor(inlineMediaMarkup({ name: f.name, type: f.type }, id));
     }
     saveNotes();
     renderAttachments(n);
@@ -224,6 +240,211 @@
 
   function deleteNoteAttachments(n) {
     (n.attachments || []).forEach((a) => idbDelete(a.id).catch(() => {}));
+  }
+
+  /* ---------- Inline media + viewer ---------- */
+
+  function mediaKind(att) {
+    if (!att) return 'file';
+    const t = att.type || '';
+    if (t.startsWith('image/')) return 'image';
+    if (t.startsWith('audio/')) return 'audio';
+    if (t === 'application/pdf' || String(att.name).toLowerCase().endsWith('.pdf')) return 'pdf';
+    return 'file';
+  }
+
+  function inlineMediaMarkup(att, id) {
+    const kind = mediaKind(att);
+    if (kind === 'image') {
+      return `<div class="media-box media-img" contenteditable="false" data-blob="${id}" data-kind="image">` +
+        `<img data-blob="${id}" alt="${esc(att.name)}"></div>`;
+    }
+    if (kind === 'audio') {
+      return `<div class="media-box media-audio" contenteditable="false" data-blob="${id}" data-kind="audio">` +
+        `<audio controls data-blob="${id}"></audio></div>`;
+    }
+    if (kind === 'pdf') {
+      return `<div class="media-box media-pdf" contenteditable="false" data-blob="${id}" data-kind="pdf" title="Tap to view">` +
+        `<span class="media-file-ico">📄</span><span class="media-file-name">${esc(att.name)}</span></div>`;
+    }
+    return `<div class="media-box media-file" contenteditable="false" data-blob="${id}" data-kind="file" title="Tap to view">` +
+      `<span class="media-file-ico">📎</span><span class="media-file-name">${esc(att.name)}</span></div>`;
+  }
+
+  function saveSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) { savedRange = null; return; }
+    const r = sel.getRangeAt(0).cloneRange();
+    savedRange = els.content.contains(r.startContainer) ? r : null;
+  }
+
+  function restoreSelection() {
+    els.content.focus();
+    if (savedRange) {
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(savedRange);
+    }
+  }
+
+  function insertInlineMediaAtCursor(markup) {
+    restoreSelection();
+    const div = document.createElement('div');
+    div.innerHTML = markup;
+    const node = div.firstChild;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && els.content.contains(sel.getRangeAt(0).startContainer)) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      els.content.appendChild(node);
+    }
+    savedRange = null;
+    hydrateInlineMedia(els.content);
+    scheduleSave();
+    recomputeTotals();
+    updateStats();
+  }
+
+  async function hydrateInlineMedia(root) {
+    const boxes = (root || els.content).querySelectorAll('[data-blob]');
+    for (const box of boxes) {
+      const id = box.dataset.blob;
+      if (!id) continue;
+      idbGet(id).then((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        if (box.dataset.kind === 'image' && box.firstElementChild && box.firstElementChild.tagName === 'IMG') {
+          box.firstElementChild.src = url;
+        } else if (box.dataset.kind === 'audio' && box.firstElementChild && box.firstElementChild.tagName === 'AUDIO') {
+          box.firstElementChild.src = url;
+        }
+      }).catch(() => {});
+    }
+  }
+
+  function sanitizeContent(html) {
+    return String(html || '').replace(/\ssrc="blob:[^"]*"/g, ' src=""');
+  }
+
+  async function openViewer(id) {
+    const n = getNote(activeId);
+    const att = n && n.attachments && n.attachments.find((a) => a.id === id);
+    const blob = await idbGet(id);
+    if (!blob) { showToast('File not found'); return; }
+    const url = URL.createObjectURL(blob);
+    const kind = mediaKind(att);
+    const body = els.viewerBody;
+    body.innerHTML = '';
+    if (kind === 'image') {
+      const img = document.createElement('img');
+      img.src = url;
+      body.appendChild(img);
+    } else if (kind === 'audio') {
+      const audio = document.createElement('audio');
+      audio.controls = true;
+      audio.autoplay = true;
+      audio.src = url;
+      body.appendChild(audio);
+    } else if (kind === 'pdf') {
+      const iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.title = att && att.name || 'PDF';
+      body.appendChild(iframe);
+    } else {
+      const audio = document.createElement('audio');
+      audio.controls = true;
+      audio.src = url;
+      body.appendChild(audio);
+    }
+    els.viewer.classList.remove('hidden');
+    document.body.classList.add('viewer-open');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  function closeViewer() {
+    els.viewer.classList.add('hidden');
+    els.viewerBody.innerHTML = '';
+    document.body.classList.remove('viewer-open');
+  }
+
+  /* ---------- Voice recording ---------- */
+
+  function pickMimeType() {
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+    if (!window.MediaRecorder) return null;
+    for (const c of candidates) {
+      try { if (MediaRecorder.isTypeSupported(c)) return c; } catch (e) {}
+    }
+    return '';
+  }
+
+  async function startRecording() {
+    const n = getNote(activeId);
+    if (!n) { showToast('Open a note first'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      showToast('Recording not supported on this browser');
+      return;
+    }
+    try {
+      recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      showToast('Microphone access denied');
+      return;
+    }
+    const mime = pickMimeType();
+    try {
+      mediaRecorder = mime ? new MediaRecorder(recStream, { mimeType: mime }) : new MediaRecorder(recStream);
+    } catch (e) {
+      try { mediaRecorder = new MediaRecorder(recStream); }
+      catch (e2) { recStream.getTracks().forEach((t) => t.stop()); showToast('Recording failed'); return; }
+    }
+    recChunks = [];
+    mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
+    mediaRecorder.onstop = finishRecording;
+    mediaRecorder.start();
+    recStartTs = Date.now();
+    els.recBar.classList.remove('hidden');
+    els.recTime.textContent = '0:00';
+    recTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - recStartTs) / 1000);
+      const mm = String(Math.floor(s / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      els.recTime.textContent = mm + ':' + ss;
+    }, 500);
+    showToast('Recording…');
+  }
+
+  function stopRecording(save) {
+    if (!mediaRecorder) return;
+    mediaRecorder.onstop = save ? finishRecording : null;
+    try { mediaRecorder.stop(); } catch (e) {}
+    mediaRecorder = null;
+  }
+
+  async function finishRecording() {
+    if (recStream) { recStream.getTracks().forEach((t) => t.stop()); recStream = null; }
+    clearInterval(recTimer);
+    els.recBar.classList.add('hidden');
+    const blob = new Blob(recChunks, { type: (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm' });
+    const n = getNote(activeId);
+    if (!blob.size || !n) { showToast('No audio captured'); return; }
+    const id = uid();
+    await idbPut(id, blob);
+    const ext = /mp4|m4a|aac/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm';
+    const name = 'Voice note ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.' + ext;
+    n.attachments = n.attachments || [];
+    n.attachments.push({ id, name, type: blob.type || 'audio/webm', size: blob.size });
+    saveNotes();
+    renderAttachments(n);
+    renderList();
+    insertInlineMediaAtCursor(inlineMediaMarkup({ name, type: blob.type }, id));
+    showToast('Voice note added ✓');
   }
 
   /* ---------- Offline OCR ---------- */
@@ -415,6 +636,7 @@
     activeId = id;
     els.title.value = n.title;
     els.content.innerHTML = n.content;
+    hydrateInlineMedia(els.content);
     els.pin.classList.toggle('on', n.pinned);
     applyColor(n);
     applyFont(n);
@@ -482,7 +704,7 @@
     const n = getNote(activeId);
     if (!n) return;
     n.title = els.title.value.trim();
-    n.content = els.content.innerHTML;
+    n.content = sanitizeContent(els.content.innerHTML);
     n.updatedAt = Date.now();
     saveNotes();
     renderList();
@@ -1209,7 +1431,7 @@
         insertTable();
         return;
       }
-      if (b.id === 'attach-btn' || b.id === 'ocr-btn') return;
+      if (b.id === 'attach-btn' || b.id === 'ocr-btn' || b.id === 'rec-btn') return;
       document.execCommand(b.dataset.cmd, false, b.dataset.value || null);
       els.content.focus();
     });
@@ -1275,11 +1497,30 @@
 
     els.exportBtn.addEventListener('click', exportNoteAsMd);
 
+    els.attachBtn.addEventListener('mousedown', saveSelection);
     els.attachBtn.addEventListener('click', () => els.fileInput.click());
     els.fileInput.addEventListener('change', () => {
       const files = [...els.fileInput.files];
       els.fileInput.value = '';
       attachFiles(files);
+    });
+
+    els.recBtn.addEventListener('mousedown', saveSelection);
+    els.recBtn.addEventListener('click', startRecording);
+    els.recStop.addEventListener('click', () => stopRecording(true));
+    els.recCancel.addEventListener('click', () => stopRecording(false));
+
+    els.viewerClose.addEventListener('click', closeViewer);
+    els.viewer.addEventListener('click', (e) => {
+      if (e.target === els.viewer) closeViewer();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !els.viewer.classList.contains('hidden')) closeViewer();
+    });
+
+    els.content.addEventListener('click', (e) => {
+      const box = e.target.closest('[data-blob]');
+      if (box) openViewer(box.dataset.blob);
     });
 
     els.ocrBtn.addEventListener('click', () => runOCR(null));
@@ -1295,13 +1536,17 @@
 
     els.attachmentList.addEventListener('click', (e) => {
       const btn = e.target.closest('button[data-act]');
-      if (!btn) return;
-      const chip = btn.closest('.attach-chip');
-      const id = chip && chip.dataset.id;
+      const chip = e.target.closest('.attach-chip');
+      if (!chip) return;
+      const id = chip.dataset.id;
       if (!id) return;
-      if (btn.dataset.act === 'dl') downloadAttachment(id);
-      else if (btn.dataset.act === 'rm') removeAttachment(id);
-      else if (btn.dataset.act === 'ocr') runOCR(id);
+      if (btn) {
+        if (btn.dataset.act === 'dl') downloadAttachment(id);
+        else if (btn.dataset.act === 'rm') removeAttachment(id);
+        else if (btn.dataset.act === 'ocr') runOCR(id);
+        return;
+      }
+      if (!e.target.closest('.attach-acts')) openViewer(id);
     });
 
     els.emptyNewBtn.addEventListener('click', newNote);

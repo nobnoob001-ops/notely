@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body class="view-list">
 <div id="app">
@@ -89,7 +89,8 @@
         <button type="button" data-cmd="formatBlock" data-value="PRE" title="Code block">&lt;/&gt;</button>
         <button id="insert-table-btn" type="button" title="Insert a table">⊞ Table</button>
         <span class="sep"></span>
-        <button id="attach-btn" type="button" title="Attach files (images, PDFs)">📎</button>
+        <button id="attach-btn" type="button" title="Attach files (images, PDFs, audio)">📎</button>
+        <button id="rec-btn" type="button" title="Record voice note">🎤</button>
         <button id="ocr-btn" type="button" title="Extract text from an attached image (offline OCR)">🔎 OCR</button>
         <select id="ocr-lang" class="toolbar-select" title="OCR language">
           <option value="eng">English</option>
@@ -105,7 +106,7 @@
           <option value="notosansbn">Noto Sans Bengali (বাংলা)</option>
           <option value="notoserifbn">Noto Serif Bengali (বাংলা)</option>
         </select>
-        <input id="file-input" type="file" hidden multiple accept="image/*,.pdf,application/pdf">
+        <input id="file-input" type="file" hidden multiple accept="image/*,.pdf,application/pdf,audio/*">
       </div>
       <div id="note-colorbar" class="note-colorbar"></div>
       <div class="content-scroll">
@@ -120,6 +121,12 @@
           <div id="ocr-bar-fill" class="ocr-bar-fill"></div>
         </div>
         <span id="ocr-status" class="ocr-status"></span>
+      </div>
+      <div id="rec-bar" class="rec-bar hidden">
+        <span class="rec-dot"></span>
+        <span id="rec-time" class="rec-time">0:00</span>
+        <button id="rec-stop" class="rec-stop" type="button">Stop</button>
+        <button id="rec-cancel" class="rec-cancel" type="button" title="Cancel">✕</button>
       </div>
       <div class="editor-bottom">
         <div class="bottom-left">
@@ -138,6 +145,10 @@
 <div id="sidebar-overlay" class="sidebar-overlay"></div>
 <button id="fab" class="fab" type="button" title="New note">+</button>
 <div id="sel-bar" class="sel-bar hidden"></div>
-<script src="app.js?v=5"></script>
+<div id="viewer" class="viewer hidden">
+  <button id="viewer-close" class="viewer-close" type="button" title="Close">✕</button>
+  <div class="viewer-body" id="viewer-body"></div>
+</div>
+<script src="app.js?v=6"></script>
 </body>
 </html>
