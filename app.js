@@ -701,6 +701,9 @@
     initColorPop();
     renderAll();
     if (notes.length) openNote(notes[0].id);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
   }
 
   init();
