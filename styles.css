@@ -71,7 +71,9 @@ body {
   background: var(--bg);
 }
 
-#app { display: grid; grid-template-columns: 230px 300px 1fr; height: 100vh; overflow: hidden; animation: appBoot 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+#app { display: grid; grid-template-columns: 230px 300px 1fr; height: 100vh; overflow: hidden; }
+
+#app > .notes-pane, #app > .editor-pane { animation: appBoot 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 @keyframes appBoot {
   0% { opacity: 0; transform: scale(0.992) translateY(8px); }
