@@ -1,6 +1,6 @@
-const CACHE = 'notely-v6';
+const CACHE = 'notely-v7';
 const ASSETS = [
-  './', './index.html', './styles.css?v=6', './app.js?v=6', './manifest.json', './icon-192.png', './icon-512.png',
+  './', './index.html', './styles.css?v=7', './app.js?v=7', './manifest.json', './icon-192.png', './icon-512.png',
   './vendor/ocr/tesseract.min.js',
   './vendor/ocr/worker.min.js',
   './vendor/ocr/tesseract-core-simd.wasm.js',

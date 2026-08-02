@@ -625,6 +625,8 @@
     saveNotes();
     renderAll();
     openNote(n.id);
+    const card = els.list.querySelector('.note-card[data-id="' + n.id + '"]');
+    if (card) card.classList.add('new-card');
     if (isMobile()) location.hash = '#/note/' + n.id;
     els.title.focus();
   }
@@ -735,17 +737,17 @@
   function renderList() {
     const list = visibleNotes();
     els.list.innerHTML = list.length
-      ? list.map(cardHTML).join('')
+      ? list.map((n, i) => cardHTML(n, i)).join('')
       : '<div class="list-empty"><div class="list-empty-icon">🗒</div><p>No notes yet</p><small>Tap + to create your first note</small></div>';
     updateCount();
   }
 
-  function cardHTML(n) {
+  function cardHTML(n, i) {
     const c = PALETTE[n.color];
     const excerpt = textOf(n.content).trim().slice(0, 120) || 'No content yet';
     const date = new Date(n.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     return `<article class="note-card${n.id === activeId ? ' active' : ''}" data-id="${n.id}" ` +
-      `style="--card-bg:${c.bg};--card-acc:${c.accent}">` +
+      `style="--card-bg:${c.bg};--card-acc:${c.accent};--i:${Math.min(i, 10)}">` +
       `<div class="card-head"><span class="card-title">${esc(n.title) || 'Untitled'}</span>` +
       (n.pinned ? '<span class="pin-dot">📌</span>' : '') + `</div>` +
       `<div class="card-excerpt">${esc(excerpt)}</div>` +
@@ -1656,6 +1658,8 @@
     initSelBar();
     initTotalsPop();
     renderAll();
+    document.body.classList.add('boot');
+    setTimeout(() => document.body.classList.remove('boot'), 700);
     const m = location.hash.match(/^#\/note\/(.+)$/);
     if (m && getNote(m[1])) openNote(m[1]);
     else if (!isMobile() && notes.length) openNote(notes[0].id);
@@ -1664,8 +1668,9 @@
     window.addEventListener('resize', updateView);
     window.addEventListener('hashchange', () => {
       const hm = location.hash.match(/^#\/note\/(.+)$/);
-      if (hm && getNote(hm[1])) openNote(hm[1]);
-      else {
+      if (hm && getNote(hm[1]) && hm[1] !== activeId) {
+        openNote(hm[1]);
+      } else if (!hm || !getNote(hm[1])) {
         flushSave();
         activeId = null;
         showEmpty();
