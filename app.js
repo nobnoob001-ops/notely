@@ -13,12 +13,86 @@
   ];
 
   const STORAGE_KEY = 'notely.notes.v1';
+  const SETTINGS_KEY = 'notely.settings.v1';
   const COPIABLE = 'p, h1, h2, h3, li, blockquote, pre, a';
   const MAX_COLS = 12;
   const MAX_TABLE_ROWS = 30;
 
   const $ = (s, p = document) => p.querySelector(s);
   const $$ = (s, p = document) => [...p.querySelectorAll(s)];
+
+  /* ---------- Crypto helpers (private notes / screen lock) ---------- */
+
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+
+  function b64(buf) {
+    return btoa(String.fromCharCode(...new Uint8Array(buf)));
+  }
+
+  function unb64(s) {
+    return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  }
+
+  function randBytes(n) {
+    const a = new Uint8Array(n);
+    crypto.getRandomValues(a);
+    return a;
+  }
+
+  async function deriveKey(pass, salt) {
+    const material = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+      material,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  async function encryptData(key, plain) {
+    const iv = randBytes(12);
+    const data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plain));
+    return { iv: b64(iv), data: b64(data) };
+  }
+
+  async function decryptData(key, payload) {
+    const out = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(payload.iv) }, key, unb64(payload.data));
+    return dec.decode(out);
+  }
+
+  function safeHash(pass, salt) {
+    return crypto.subtle.digest('SHA-256', enc.encode(salt + '::' + pass)).then((d) => b64(d));
+  }
+
+  let settings = loadSettings();
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      const s = raw ? JSON.parse(raw) : {};
+      return {
+        enabled: !!s.enabled,
+        salt: s.salt || '',
+        pin: s.pin || '',
+        pinLen: Number(s.pinLen) || 4,
+        duress: s.duress || '',
+        duressSalt: s.duressSalt || '',
+        idle: Number(s.idle) || 0,
+        idleEnabled: !!s.idleEnabled
+      };
+    } catch (e) {
+      return { enabled: false, salt: '', pin: '', pinLen: 4, duress: '', duressSalt: '', idle: 0, idleEnabled: false };
+    }
+  }
+
+  function saveSettings() {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch (e) {}
+  }
+
 
   const els = {
     newBtn: $('#new-note-btn'),
@@ -66,7 +140,37 @@
     recCancel: $('#rec-cancel'),
     viewer: $('#viewer'),
     viewerBody: $('#viewer-body'),
-    viewerClose: $('#viewer-close')
+    viewerClose: $('#viewer-close'),
+    lockBtn: $('#lock-btn'),
+    lockSettingsBtn: $('#lock-settings-btn'),
+    screenLock: $('#screen-lock'),
+    lockPad: $('#screen-lock .lock-pad'),
+    lockDots: $('#screen-lock .lock-dots'),
+    lockError: $('#lock-error'),
+    lockBrand: $('#lock-brand'),
+    notePass: $('#note-pass'),
+    notePassTitle: $('#note-pass-title'),
+    notePassSub: $('#note-pass-sub'),
+    notePassInput: $('#note-pass-input'),
+    notePassConfirm: $('#note-pass-confirm'),
+    notePassError: $('#note-pass-error'),
+    notePassCancel: $('#note-pass-cancel'),
+    notePassOk: $('#note-pass-ok'),
+    noteUnlock: $('#note-unlock'),
+    noteUnlockTitle: $('#note-unlock-title'),
+    noteUnlockSub: $('#note-unlock-sub'),
+    noteUnlockInput: $('#note-unlock-input'),
+    noteUnlockError: $('#note-unlock-error'),
+    noteUnlockCancel: $('#note-unlock-cancel'),
+    noteUnlockOk: $('#note-unlock-ok'),
+    lockSettings: $('#lock-settings'),
+    lockEnabled: $('#lock-enabled'),
+    lockPin: $('#lock-pin'),
+    lockDuress: $('#lock-duress'),
+    lockIdle: $('#lock-idle'),
+    lockSettingsError: $('#lock-settings-error'),
+    lockSettingsCancel: $('#lock-settings-cancel'),
+    lockSettingsSave: $('#lock-settings-save')
   };
 
   let notes = loadNotes();
@@ -89,6 +193,12 @@
   let recStream = null;
   let recStartTs = 0;
   let recTimer = null;
+  let unlocked = {};
+  let pendingLockId = null;
+  let pendingUnlockId = null;
+  let lockBuf = '';
+  let lockVisible = false;
+  let idleTimer = null;
 
   function loadNotes() {
     try {
@@ -102,8 +212,24 @@
 
   function saveNotes() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(notes.map(serializeNote)));
     } catch (e) {}
+  }
+
+  function serializeNote(n) {
+    if (!n.private) return n;
+    return {
+      id: n.id,
+      color: n.color,
+      tags: [],
+      attachments: n.attachments,
+      font: n.font,
+      pinned: n.pinned,
+      createdAt: n.createdAt,
+      updatedAt: n.updatedAt,
+      private: true,
+      enc: n.enc
+    };
   }
 
   /* ---------- Attachment storage (IndexedDB) ---------- */
@@ -615,7 +741,9 @@
       font: 'default',
       pinned: false,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      private: false,
+      enc: null
     };
     notes.unshift(n);
     activeId = n.id;
@@ -635,11 +763,17 @@
     flushSave();
     const n = getNote(id);
     if (!n) return;
+    if (isPrivate(n) && !unlocked[n.id]) {
+      pendingUnlockId = id;
+      openUnlockModal();
+      return;
+    }
     activeId = id;
     els.title.value = n.title;
     els.content.innerHTML = n.content;
     hydrateInlineMedia(els.content);
     els.pin.classList.toggle('on', n.pinned);
+    els.lockBtn.classList.toggle('on', isPrivate(n));
     applyColor(n);
     applyFont(n);
     els.fontSelect.value = n.font || 'default';
@@ -702,13 +836,27 @@
     saveTimer = setTimeout(saveCurrent, 250);
   }
 
+  function persistPrivate(n) {
+    if (isPrivate(n) && unlocked[n.id]) {
+      const key = unlocked[n.id];
+      encryptData(key, JSON.stringify({ title: n.title || '', content: n.content || '', tags: n.tags || [] }))
+        .then((ed) => {
+          n.enc = { ...n.enc, iv: ed.iv, data: ed.data };
+          saveNotes();
+        })
+        .catch(() => saveNotes());
+    } else {
+      saveNotes();
+    }
+  }
+
   function saveCurrent() {
     const n = getNote(activeId);
     if (!n) return;
     n.title = els.title.value.trim();
     n.content = sanitizeContent(els.content.innerHTML);
     n.updatedAt = Date.now();
-    saveNotes();
+    persistPrivate(n);
     renderList();
     renderTags();
     updateStats();
@@ -716,6 +864,9 @@
 
   function visibleNotes() {
     let out = [...notes];
+    if (document.body.classList.contains('duress-mode')) {
+      out = out.filter((n) => !isPrivate(n));
+    }
     if (filter === 'pinned') out = out.filter((n) => n.pinned);
     if (activeTag) out = out.filter((n) => n.tags.includes(activeTag));
     const q = els.search.value.trim().toLowerCase();
@@ -744,11 +895,15 @@
 
   function cardHTML(n, i) {
     const c = PALETTE[n.color];
-    const excerpt = textOf(n.content).trim().slice(0, 120) || 'No content yet';
+    const locked = isPrivate(n) && !unlocked[n.id];
+    const excerpt = locked
+      ? '🔒 Private note — enter password to view'
+      : (textOf(n.content).trim().slice(0, 120) || 'No content yet');
+    const title = locked ? 'Private note' : (n.title || 'Untitled');
     const date = new Date(n.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    return `<article class="note-card${n.id === activeId ? ' active' : ''}" data-id="${n.id}" ` +
+    return `<article class="note-card${n.id === activeId ? ' active' : ''}${locked ? ' locked' : ''}" data-id="${n.id}" ` +
       `style="--card-bg:${c.bg};--card-acc:${c.accent};--i:${Math.min(i, 10)}">` +
-      `<div class="card-head"><span class="card-title">${esc(n.title) || 'Untitled'}</span>` +
+      `<div class="card-head"><span class="card-title">${esc(title)}</span>` +
       (n.pinned ? '<span class="pin-dot">📌</span>' : '') + `</div>` +
       `<div class="card-excerpt">${esc(excerpt)}</div>` +
       `<div class="card-foot"><span class="card-date">${date}</span>` +
@@ -773,7 +928,10 @@
 
   function renderTags() {
     const counts = {};
-    notes.forEach((n) => n.tags.forEach((t) => { counts[t] = (counts[t] || 0) + 1; }));
+    notes.forEach((n) => {
+      if (document.body.classList.contains('duress-mode') && isPrivate(n)) return;
+      n.tags.forEach((t) => { counts[t] = (counts[t] || 0) + 1; });
+    });
     const tags = Object.keys(counts).sort();
     els.tagList.innerHTML = tags.length
       ? tags.map((t) =>
@@ -792,6 +950,199 @@
       `<span class="tag-chip" data-tag="${esc(t)}">#${esc(t)}` +
       `<button type="button" class="remove" title="Remove tag">×</button></span>`
     ).join('');
+  }
+
+  /* ---------- Private notes (encryption) ---------- */
+
+  function isPrivate(n) {
+    return !!n.private;
+  }
+
+  function unlockedNote(n) {
+    return !isPrivate(n) || !!unlocked[n.id];
+  }
+
+  function encryptNote(n, pass) {
+    const salt = randBytes(16);
+    return deriveKey(pass, salt).then((key) =>
+      encryptData(key, JSON.stringify({ title: n.title || '', content: n.content || '', tags: n.tags || [] }))
+        .then((ed) => {
+          unlocked[n.id] = key;
+          n.private = true;
+          n.enc = { salt: b64(salt), iv: ed.iv, data: ed.data };
+          return true;
+        })
+    );
+  }
+
+  async function decryptNote(n, pass) {
+    if (!n.enc) return false;
+    const key = await deriveKey(pass, unb64(n.enc.salt));
+    const plain = await decryptData(key, n.enc);
+    const obj = JSON.parse(plain);
+    unlocked[n.id] = key;
+    n.title = obj.title || '';
+    n.content = obj.content || '';
+    n.tags = obj.tags || [];
+    return true;
+  }
+
+  function openPassModal() {
+    els.notePassInput.value = '';
+    els.notePassConfirm.value = '';
+    els.notePassError.textContent = '';
+    els.notePass.classList.remove('hidden');
+    setTimeout(() => els.notePassInput.focus(), 60);
+  }
+
+  function openUnlockModal() {
+    els.noteUnlockInput.value = '';
+    els.noteUnlockError.textContent = '';
+    els.noteUnlock.classList.remove('hidden');
+    setTimeout(() => els.noteUnlockInput.focus(), 60);
+  }
+
+  /* ---------- Screen lock ---------- */
+
+  function lockNow() {
+    flushSave();
+    clearTimeout(idleTimer);
+    lockBuf = '';
+    lockVisible = true;
+    renderLockDots();
+    els.lockError.textContent = '';
+    els.screenLock.classList.remove('hidden');
+  }
+
+  function unlockNow(duress) {
+    lockVisible = false;
+    els.screenLock.classList.add('hidden');
+    document.body.classList.toggle('duress-mode', duress);
+    if (duress) {
+      unlocked = {};
+      notes.forEach((n) => { if (n.private) { n.title = ''; n.content = ''; } });
+      const n = getNote(activeId);
+      if (n && n.private) {
+        activeId = null;
+        showEmpty();
+      }
+      renderList();
+    }
+    resetIdle();
+  }
+
+  function renderLockDots() {
+    const n = settings.pinLen || 4;
+    els.lockDots.innerHTML = '<span></span>'.repeat(n);
+    els.lockDots.querySelectorAll('span').forEach((s, i) => s.classList.toggle('filled', i < lockBuf.length));
+  }
+
+  async function checkPin() {
+    const pinHash = await safeHash(lockBuf, settings.salt);
+    if (settings.pin && pinHash === settings.pin) {
+      unlockNow(false);
+      return;
+    }
+    if (settings.duress && settings.duressSalt) {
+      const dHash = await safeHash(lockBuf, settings.duressSalt);
+      if (dHash === settings.duress) {
+        unlockNow(true);
+        return;
+      }
+    }
+    els.lockError.textContent = 'Wrong PIN';
+    lockBuf = '';
+    renderLockDots();
+  }
+
+  function resetIdle() {
+    clearTimeout(idleTimer);
+    if (!settings.enabled || !settings.idle || lockVisible) return;
+    idleTimer = setTimeout(() => {
+      if (settings.enabled && !lockVisible) lockNow();
+    }, settings.idle * 1000);
+  }
+
+  function bindLockPad(pad) {
+    pad.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      if (btn.dataset.act === 'clear') {
+        lockBuf = lockBuf.slice(0, -1);
+        els.lockError.textContent = '';
+        renderLockDots();
+        return;
+      }
+      if (btn.dataset.act === 'enter') {
+        if (lockBuf.length >= (settings.pinLen || 4)) checkPin();
+        return;
+      }
+      if (lockBuf.length >= (settings.pinLen || 4)) return;
+      lockBuf += btn.dataset.d;
+      els.lockError.textContent = '';
+      renderLockDots();
+      if (lockBuf.length === (settings.pinLen || 4)) checkPin();
+    });
+  }
+
+  function openLockSettings() {
+    els.lockEnabled.checked = settings.enabled;
+    els.lockPin.value = '';
+    els.lockDuress.value = '';
+    els.lockIdle.value = String(settings.idle || 0);
+    els.lockSettingsError.textContent = '';
+    els.lockSettings.classList.remove('hidden');
+  }
+
+  async function saveLockSettings() {
+    const enabled = els.lockEnabled.checked;
+    const pin = els.lockPin.value.trim();
+    const duress = els.lockDuress.value.trim();
+    const idle = Number(els.lockIdle.value) || 0;
+    if (enabled && !/^\d{4,8}$/.test(pin)) {
+      els.lockSettingsError.textContent = 'Screen PIN must be 4–8 digits';
+      return;
+    }
+    if (enabled && duress && (!/^\d{4,8}$/.test(duress) || duress === pin)) {
+      els.lockSettingsError.textContent = 'Duress PIN must be 4–8 digits and different from the screen PIN';
+      return;
+    }
+    if (!enabled) {
+      settings = { ...settings, enabled: false, idle: idle, idleEnabled: idle > 0 };
+      saveSettings();
+      els.lockSettings.classList.add('hidden');
+      if (lockVisible) {
+        lockVisible = false;
+        els.screenLock.classList.add('hidden');
+        document.body.classList.remove('duress-mode');
+      }
+      showToast('Screen lock disabled');
+      resetIdle();
+      return;
+    }
+    const salt = b64(randBytes(16));
+    const pinHash = await safeHash(pin, salt);
+    let duressHash = '';
+    let duressSalt = '';
+    if (duress) {
+      duressSalt = b64(randBytes(16));
+      duressHash = await safeHash(duress, duressSalt);
+    }
+    settings = {
+      ...settings,
+      enabled: true,
+      salt,
+      pin: pinHash,
+      pinLen: pin.length,
+      duress: duressHash,
+      duressSalt,
+      idle,
+      idleEnabled: idle > 0
+    };
+    saveSettings();
+    els.lockSettings.classList.add('hidden');
+    showToast('Screen lock saved');
+    lockNow();
   }
 
   /* ---------- Copy helpers ---------- */
@@ -1438,6 +1789,72 @@
       els.content.focus();
     });
 
+    els.lockBtn.addEventListener('click', () => {
+      const n = getNote(activeId);
+      if (!n) return;
+      pendingLockId = n.id;
+      els.notePassTitle.textContent = isPrivate(n) ? 'Change password' : 'Lock note';
+      els.notePassSub.textContent = isPrivate(n)
+        ? 'Set a new password for this note.'
+        : 'This note will be encrypted with a password.';
+      openPassModal();
+    });
+
+    els.notePassCancel.addEventListener('click', () => els.notePass.classList.add('hidden'));
+    els.notePassOk.addEventListener('click', async () => {
+      const n = getNote(pendingLockId);
+      if (!n) return;
+      const pass = els.notePassInput.value;
+      const conf = els.notePassConfirm.value;
+      if (pass.length < 4) {
+        els.notePassError.textContent = 'Password must be at least 4 characters';
+        return;
+      }
+      if (pass !== conf) {
+        els.notePassError.textContent = 'Passwords do not match';
+        return;
+      }
+      try {
+        await encryptNote(n, pass);
+        saveNotes();
+        renderList();
+        els.lockBtn.classList.add('on');
+        els.notePass.classList.add('hidden');
+        showToast('Note locked');
+      } catch (e) {
+        els.notePassError.textContent = 'Encryption failed';
+      }
+    });
+
+    els.noteUnlockCancel.addEventListener('click', () => els.noteUnlock.classList.add('hidden'));
+    els.noteUnlockOk.addEventListener('click', async () => {
+      const n = getNote(pendingUnlockId);
+      if (!n) return;
+      const pass = els.noteUnlockInput.value;
+      try {
+        await decryptNote(n, pass);
+        els.noteUnlock.classList.add('hidden');
+        els.lockBtn.classList.add('on');
+        openNote(n.id);
+      } catch (e) {
+        els.noteUnlockError.textContent = 'Wrong password';
+      }
+    });
+
+    els.lockSettingsBtn.addEventListener('click', openLockSettings);
+    els.lockSettingsCancel.addEventListener('click', () => els.lockSettings.classList.add('hidden'));
+    els.lockSettingsSave.addEventListener('click', saveLockSettings);
+
+    bindLockPad(els.lockPad);
+
+    ['pointerdown', 'keydown', 'touchstart', 'scroll', 'wheel'].forEach((ev) => {
+      document.addEventListener(ev, resetIdle, { passive: true });
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && settings.enabled && !lockVisible) resetIdle();
+    });
+
     els.pin.addEventListener('click', () => {
       const n = getNote(activeId);
       if (!n) return;
@@ -1561,7 +1978,7 @@
         const tag = els.tagInput.value.trim().replace(/^#/, '').toLowerCase();
         if (tag && !n.tags.includes(tag)) {
           n.tags.push(tag);
-          saveNotes();
+          persistPrivate(n);
           renderTagChips(n);
           renderTags();
           renderList();
@@ -1579,7 +1996,7 @@
         const n = getNote(activeId);
         if (!n) return;
         n.tags = n.tags.filter((t) => t !== chip.dataset.tag);
-        saveNotes();
+        persistPrivate(n);
         renderTagChips(n);
         renderTags();
         renderList();
@@ -1665,6 +2082,10 @@
     else if (!isMobile() && notes.length) openNote(notes[0].id);
     updateView();
     updateStats();
+    if (settings.enabled) {
+      lockNow();
+      resetIdle();
+    }
     window.addEventListener('resize', updateView);
     window.addEventListener('hashchange', () => {
       const hm = location.hash.match(/^#\/note\/(.+)$/);

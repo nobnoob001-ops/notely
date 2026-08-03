@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=7">
+<link rel="stylesheet" href="styles.css?v=8">
 <style>
   html { background: #f6f7f9; }
   body { background: #f6f7f9; margin: 0; }
@@ -33,7 +33,9 @@
       <div class="tags-title">Tags</div>
       <div id="tag-list"></div>
     </div>
-    <div class="sidebar-foot">New notes get their own soft colour</div>
+    <div class="sidebar-foot">
+      <button id="lock-settings-btn" type="button" class="foot-btn" title="Screen lock & duress PIN">🔒 Screen lock</button>
+    </div>
   </aside>
 
   <section class="notes-pane">
@@ -75,6 +77,7 @@
         <div class="editor-actions">
           <button id="pin-btn" type="button" title="Pin">Pin</button>
           <button id="color-btn" type="button" title="Colour">🎨</button>
+          <button id="lock-btn" type="button" title="Lock note">🔒</button>
           <button id="focus-btn" type="button" title="Focus mode">⛶</button>
           <button id="delete-btn" type="button" title="Delete">🗑</button>
         </div>
@@ -95,8 +98,8 @@
         <span class="sep"></span>
         <button id="attach-btn" type="button" title="Attach files (images, PDFs, audio)">📎</button>
         <button id="rec-btn" type="button" title="Record voice note">🎤</button>
-        <button id="ocr-btn" type="button" title="Extract text from an attached image (offline OCR)">🔎 OCR</button>
-        <select id="ocr-lang" class="toolbar-select" title="OCR language">
+        <button id="ocr-btn" type="button" title="Image to text — extract text from an attached image (offline)">🔎 Image to text</button>
+        <select id="ocr-lang" class="toolbar-select" title="Image to text language">
           <option value="eng">English</option>
           <option value="ben">বাংলা</option>
           <option value="eng+ben">English + বাংলা</option>
@@ -153,6 +156,79 @@
   <button id="viewer-close" class="viewer-close" type="button" title="Close">✕</button>
   <div class="viewer-body" id="viewer-body"></div>
 </div>
-<script src="app.js?v=7"></script>
+
+<div id="screen-lock" class="lock-screen hidden">
+  <div class="lock-card">
+    <div class="lock-brand"><span class="brand-dot"></span>Notely</div>
+    <p class="lock-hint" id="lock-hint">Enter your PIN</p>
+    <div class="lock-dots" id="lock-dots"><span></span><span></span><span></span><span></span></div>
+    <div class="lock-error" id="lock-error"></div>
+    <div class="lock-pad">
+      <button type="button" data-d="1">1</button><button type="button" data-d="2">2</button><button type="button" data-d="3">3</button>
+      <button type="button" data-d="4">4</button><button type="button" data-d="5">5</button><button type="button" data-d="6">6</button>
+      <button type="button" data-d="7">7</button><button type="button" data-d="8">8</button><button type="button" data-d="9">9</button>
+      <button type="button" data-act="clear">⌫</button><button type="button" data-d="0">0</button><button type="button" data-act="enter">↵</button>
+    </div>
+  </div>
+</div>
+
+<div id="note-pass" class="modal-backdrop hidden">
+  <div class="modal-card">
+    <h3 id="note-pass-title">Lock note</h3>
+    <p class="modal-sub" id="note-pass-sub">Set a password for this note.</p>
+    <input id="note-pass-input" type="password" placeholder="Password" autocomplete="new-password">
+    <input id="note-pass-confirm" type="password" placeholder="Confirm password" autocomplete="new-password">
+    <div class="modal-error" id="note-pass-error"></div>
+    <div class="modal-acts">
+      <button id="note-pass-cancel" type="button" class="modal-btn">Cancel</button>
+      <button id="note-pass-ok" type="button" class="modal-btn primary">Lock</button>
+    </div>
+  </div>
+</div>
+
+<div id="note-unlock" class="modal-backdrop hidden">
+  <div class="modal-card">
+    <h3>Private note</h3>
+    <p class="modal-sub">Enter this note's password to view it.</p>
+    <input id="note-unlock-input" type="password" placeholder="Password" autocomplete="current-password">
+    <div class="modal-error" id="note-unlock-error"></div>
+    <div class="modal-acts">
+      <button id="note-unlock-cancel" type="button" class="modal-btn">Cancel</button>
+      <button id="note-unlock-ok" type="button" class="modal-btn primary">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<div id="lock-settings" class="modal-backdrop hidden">
+  <div class="modal-card">
+    <h3>Screen lock</h3>
+    <label class="lock-toggle-row">
+      <span>Enable screen lock</span>
+      <input id="lock-enabled" type="checkbox">
+    </label>
+    <p class="modal-sub">A PIN is required to open Notely.</p>
+    <input id="lock-pin" type="password" inputmode="numeric" maxlength="8" placeholder="Screen PIN (4–8 digits)">
+    <p class="modal-sub">Duress PIN opens the app but hides all private notes, so it looks normal if forced.</p>
+    <input id="lock-duress" type="password" inputmode="numeric" maxlength="8" placeholder="Duress PIN (optional, different)">
+    <label class="lock-toggle-row">
+      <span>Auto-lock after idle</span>
+      <select id="lock-idle">
+        <option value="0">Never</option>
+        <option value="60">1 minute</option>
+        <option value="300">5 minutes</option>
+        <option value="900">15 minutes</option>
+        <option value="1800">30 minutes</option>
+        <option value="3600">1 hour</option>
+      </select>
+    </label>
+    <div class="modal-error" id="lock-settings-error"></div>
+    <div class="modal-acts">
+      <button id="lock-settings-cancel" type="button" class="modal-btn">Cancel</button>
+      <button id="lock-settings-save" type="button" class="modal-btn primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js?v=8"></script>
 </body>
 </html>
