@@ -154,6 +154,7 @@
     notePassInput: $('#note-pass-input'),
     notePassConfirm: $('#note-pass-confirm'),
     notePassError: $('#note-pass-error'),
+    notePassUnlock: $('#note-pass-unlock'),
     notePassCancel: $('#note-pass-cancel'),
     notePassOk: $('#note-pass-ok'),
     noteUnlock: $('#note-unlock'),
@@ -1795,9 +1796,23 @@
       pendingLockId = n.id;
       els.notePassTitle.textContent = isPrivate(n) ? 'Change password' : 'Lock note';
       els.notePassSub.textContent = isPrivate(n)
-        ? 'Set a new password for this note.'
+        ? 'Set a new password for this note, or remove its lock.'
         : 'This note will be encrypted with a password.';
+      els.notePassUnlock.classList.toggle('hidden', !isPrivate(n));
       openPassModal();
+    });
+
+    els.notePassUnlock.addEventListener('click', () => {
+      const n = getNote(pendingLockId);
+      if (!n) return;
+      delete n.private;
+      delete n.enc;
+      delete unlocked[n.id];
+      els.lockBtn.classList.remove('on');
+      els.notePass.classList.add('hidden');
+      saveNotes();
+      renderList();
+      showToast('Lock removed');
     });
 
     els.notePassCancel.addEventListener('click', () => els.notePass.classList.add('hidden'));
