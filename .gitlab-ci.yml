@@ -1,0 +1,10 @@
+pages:
+  stage: deploy
+  script:
+    - mkdir -p public
+    - cp -a index.html app.js styles.css manifest.json sw.js icon-192.png icon-512.png fonts vendor public/
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
