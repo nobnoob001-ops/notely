@@ -765,10 +765,13 @@
     const n = getNote(id);
     if (!n) return;
     if (isPrivate(n) && !unlocked[n.id]) {
+      closeLockModals();
       pendingUnlockId = id;
       openUnlockModal();
       return;
     }
+    closeLockModals();
+    pendingUnlockId = null;
     activeId = id;
     els.title.value = n.title;
     els.content.innerHTML = n.content;
@@ -789,6 +792,9 @@
   }
 
   function showEmpty() {
+    closeLockModals();
+    pendingUnlockId = null;
+    pendingLockId = null;
     activeId = null;
     els.editor.classList.add('hidden');
     els.empty.classList.remove('hidden');
@@ -1003,6 +1009,21 @@
     setTimeout(() => els.noteUnlockInput.focus(), 60);
   }
 
+  function closeLockModals() {
+    els.notePass.classList.add('hidden');
+    els.noteUnlock.classList.add('hidden');
+    els.lockSettings.classList.add('hidden');
+  }
+
+  function resetPendingUnlockHash() {
+    if (pendingUnlockId && location.hash === '#/note/' + pendingUnlockId) {
+      pendingUnlockId = null;
+      location.hash = '#/';
+    } else {
+      pendingUnlockId = null;
+    }
+  }
+
   /* ---------- Screen lock ---------- */
 
   function lockNow() {
@@ -1018,6 +1039,7 @@
   function unlockNow(duress) {
     lockVisible = false;
     els.screenLock.classList.add('hidden');
+    closeLockModals();
     document.body.classList.toggle('duress-mode', duress);
     if (duress) {
       unlocked = {};
@@ -1815,7 +1837,10 @@
       showToast('Lock removed');
     });
 
-    els.notePassCancel.addEventListener('click', () => els.notePass.classList.add('hidden'));
+    els.notePassCancel.addEventListener('click', () => {
+      els.notePass.classList.add('hidden');
+      pendingLockId = null;
+    });
     els.notePassOk.addEventListener('click', async () => {
       const n = getNote(pendingLockId);
       if (!n) return;
@@ -1841,7 +1866,10 @@
       }
     });
 
-    els.noteUnlockCancel.addEventListener('click', () => els.noteUnlock.classList.add('hidden'));
+    els.noteUnlockCancel.addEventListener('click', () => {
+      els.noteUnlock.classList.add('hidden');
+      resetPendingUnlockHash();
+    });
     els.noteUnlockOk.addEventListener('click', async () => {
       const n = getNote(pendingUnlockId);
       if (!n) return;
@@ -1850,15 +1878,35 @@
         await decryptNote(n, pass);
         els.noteUnlock.classList.add('hidden');
         els.lockBtn.classList.add('on');
+        pendingUnlockId = null;
         openNote(n.id);
       } catch (e) {
         els.noteUnlockError.textContent = 'Wrong password';
       }
     });
+    ['notePassInput', 'notePassConfirm', 'noteUnlockInput'].forEach((key) => {
+      els[key].addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (key === 'noteUnlockInput') els.noteUnlockOk.click();
+          else els.notePassOk.click();
+        }
+      });
+    });
 
     els.lockSettingsBtn.addEventListener('click', openLockSettings);
     els.lockSettingsCancel.addEventListener('click', () => els.lockSettings.classList.add('hidden'));
     els.lockSettingsSave.addEventListener('click', saveLockSettings);
+
+    [els.notePass, els.noteUnlock, els.lockSettings].forEach((modal) => {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          if (modal === els.noteUnlock) resetPendingUnlockHash();
+          if (modal === els.notePass) pendingLockId = null;
+          modal.classList.add('hidden');
+        }
+      });
+    });
 
     bindLockPad(els.lockPad);
 

@@ -1,4 +1,4 @@
-const CACHE = 'notely-v8';
+const CACHE = 'notely-v9';
 const ASSETS = [
   './', './index.html', './styles.css?v=8', './app.js?v=8', './manifest.json', './icon-192.png', './icon-512.png',
   './vendor/ocr/tesseract.min.js',
