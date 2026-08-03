@@ -1,3 +1,8 @@
-test:
+pages:
+  stage: deploy
   script:
-    - echo "hello from gitlab ci"
+    - mkdir -p public
+    - cp -a index.html app.js styles.css manifest.json sw.js icon-192.png icon-512.png fonts vendor public/
+  artifacts:
+    paths:
+      - public
